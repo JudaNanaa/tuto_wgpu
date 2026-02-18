@@ -45,6 +45,59 @@ const VERTICES: &[Vertex] = &[
 
 const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 
+const CHALENGE_VERTICES: &[Vertex] = &[
+    // Centre
+    Vertex {
+        position: [0.0, 0.0, 0.0],
+        color: [1.0, 1.0, 0.0],
+    },
+    // Points extérieurs / intérieurs alternés
+    Vertex {
+        position: [0.0, 0.5, 0.0],
+        color: [1.0, 0.0, 0.0],
+    }, // 1 outer
+    Vertex {
+        position: [0.118, 0.162, 0.0],
+        color: [1.0, 0.0, 0.0],
+    }, // 2 inner
+    Vertex {
+        position: [0.475, 0.155, 0.0],
+        color: [1.0, 0.0, 0.0],
+    }, // 3 outer
+    Vertex {
+        position: [0.190, -0.062, 0.0],
+        color: [1.0, 0.0, 0.0],
+    }, // 4 inner
+    Vertex {
+        position: [0.293, -0.404, 0.0],
+        color: [1.0, 0.0, 0.0],
+    }, // 5 outer
+    Vertex {
+        position: [0.0, -0.2, 0.0],
+        color: [1.0, 0.0, 0.0],
+    }, // 6 inner
+    Vertex {
+        position: [-0.293, -0.404, 0.0],
+        color: [1.0, 0.0, 0.0],
+    }, // 7 outer
+    Vertex {
+        position: [-0.190, -0.062, 0.0],
+        color: [1.0, 0.0, 0.0],
+    }, // 8 inner
+    Vertex {
+        position: [-0.475, 0.155, 0.0],
+        color: [1.0, 0.0, 0.0],
+    }, // 9 outer
+    Vertex {
+        position: [-0.118, 0.162, 0.0],
+        color: [1.0, 0.0, 0.0],
+    }, // 10 inner
+];
+
+const CHALENGE_INDICES: &[u16] = &[
+    0, 2, 1, 0, 3, 2, 0, 4, 3, 0, 5, 4, 0, 6, 5, 0, 7, 6, 0, 8, 7, 0, 9, 8, 0, 10, 9, 0, 1, 10,
+];
+
 impl Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 2] =
         wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
@@ -66,13 +119,15 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     is_surface_configured: bool,
     render_pipeline: wgpu::RenderPipeline,
-    chalenge_render_pipeline: wgpu::RenderPipeline,
-    color_use: bool,
     window: Arc<Window>,
     clear_color: wgpu::Color,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    chalenge_vertex_buffer: wgpu::Buffer,
+    chalenge_index_buffer: wgpu::Buffer,
+    chalenge_num_indices: u32,
+    space_is_pressed: bool,
 }
 
 impl State {
@@ -186,54 +241,6 @@ impl State {
             cache: None,
         });
 
-        let chalenge_shader = device.create_shader_module(wgpu::include_wgsl!("chalenge.wgsl"));
-
-        let chalenge_render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
-                immediate_size: 0,
-            });
-
-        let chalenge_render_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Render Pipeline"),
-                layout: Some(&chalenge_render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &chalenge_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &chalenge_shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState {
-                    count: 1,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview_mask: None,
-                cache: None,
-            });
-
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(VERTICES),
@@ -248,6 +255,20 @@ impl State {
 
         let num_indices = INDICES.len() as u32;
 
+        let chalenge_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(CHALENGE_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let chalenge_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(CHALENGE_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let chalenge_num_indices = CHALENGE_INDICES.len() as u32;
+
         Ok(Self {
             surface,
             device,
@@ -255,13 +276,15 @@ impl State {
             config,
             is_surface_configured: false,
             render_pipeline,
-            chalenge_render_pipeline,
-            color_use: false,
             vertex_buffer,
             clear_color: wgpu::Color::BLACK,
             window,
             index_buffer,
             num_indices,
+            space_is_pressed: false,
+            chalenge_vertex_buffer,
+            chalenge_index_buffer,
+            chalenge_num_indices,
         })
     }
 
@@ -278,7 +301,7 @@ impl State {
     fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Space, _) => {
-                self.color_use = is_pressed;
+                self.space_is_pressed ^= is_pressed;
             }
             (KeyCode::Escape, true) => event_loop.exit(),
             _ => {}
@@ -332,17 +355,22 @@ impl State {
                 multiview_mask: None,
             });
 
-            let render_pipeline = if self.color_use {
-                &self.chalenge_render_pipeline
-            } else {
-                &self.render_pipeline
-            };
+            let render_pipeline = &self.render_pipeline;
 
             render_pass.set_pipeline(render_pipeline);
 
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            let (vertex_buffer, index_buffer, num_indices) = if self.space_is_pressed {
+                (
+                    &self.chalenge_vertex_buffer,
+                    &self.chalenge_index_buffer,
+                    self.chalenge_num_indices,
+                )
+            } else {
+                (&self.vertex_buffer, &self.index_buffer, self.num_indices)
+            };
+            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..num_indices, 0, 0..1);
         }
 
         // submit will accept anything that implements IntoIter
